@@ -9,7 +9,7 @@
 
    ```
    git clone https://github.com/elhuel/weatherBot.git
-   cd your-repo
+   cd weatherBot
    ```
 
 2. **Создайте виртуальное окружение (рекомендуется)**:
