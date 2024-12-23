@@ -1,3 +1,4 @@
+
 from aiogram import Bot, Dispatcher, types
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.fsm.context import FSMContext
@@ -25,54 +26,74 @@ class Weather(StatesGroup):
 # Обработчик команды /start
 @dp.message(Command('start'))
 async def start(message: types.Message):
-    await message.reply("Привет! Я бот для прогноза погоды по заданным точкам.\n"
-                        "Введи команду /weather, чтобы узнать погоду для введенных локаций.")
+    try:
+        await message.reply("Привет! Я бот для прогноза погоды по заданным точкам.\n"
+                            "Введи команду /weather, чтобы узнать погоду для введенных локаций.")
+    except Exception as e:
+        await message.reply(f"Произошла ошибка: {e}")
 
 # Обработчик команды /help
 @dp.message(Command('help'))
 async def help(message: types.Message):
-    await message.reply("Доступные команды:\n"
-                        "/start - Знакомство с ботом\n"
-                        "/help - Доступные команды\n"
-                        "/weather - Получить данные о погоде.")
+    try:
+        await message.reply("Доступные команды:\n"
+                            "/start - Знакомство с ботом\n"
+                            "/help - Доступные команды\n"
+                            "/weather - Получить данные о погоде.")
+    except Exception as e:
+        await message.reply(f"Произошла ошибка: {e}")
 
 # Обработчик команды /weather
 @dp.message(Command('weather'))
 async def weather(message: types.Message, state: FSMContext):
-    await message.reply("Введите маршрут, чтобы получить прогноз погоды \n\nПример:"
-                         " Москва - Санкт-Петербург - Владивосток. (между названиями городов 'пробел+тире+пробел')")
-    await state.set_state(Weather.locations)  # Устанавливаем состояние ввода локаций
+    try:
+        await message.reply("Введите маршрут, чтобы получить прогноз погоды \n\nПример:"
+                             " Москва - Санкт-Петербург - Владивосток. (между названиями городов 'пробел+тире+пробел')")
+        await state.set_state(Weather.locations)  # Устанавливаем состояние ввода локаций
+    except Exception as e:
+        await message.reply(f"Произошла ошибка: {e}")
+
 
 # Обработчик ввода локаций
 @dp.message(StateFilter(Weather.locations))
 async def get_locations(message: types.Message, state: FSMContext):
-    locations = message.text.lower().split(" - ")  # Разделяем введенные города по тире
-    locations = [location.capitalize() for location in locations]
-    await state.update_data(locations=locations)  # Сохраняем локации в состоянии
+    try:
+        locations = message.text.lower().split(" - ")  # Разделяем введенные города по тире
+        locations = [location.capitalize() for location in locations]
+        if not locations:
+            raise ValueError("Не удалось распознать города. Проверьте ввод.")
+        await state.update_data(locations=locations)  # Сохраняем локации в состоянии
 
-    # Создаем кнопки для выбора количества дней прогноза
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="1 день", callback_data="1")],
-            [InlineKeyboardButton(text="5 дней", callback_data="5")]
-        ]
-    )
-    
-    await message.reply("Выберите количество дней, на которые вы хотите получить прогноз погоды:", reply_markup=keyboard)
-    await state.set_state(Weather.days)  # Устанавливаем состояние выбора дней
+        # Создаем кнопки для выбора количества дней прогноза
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="1 день", callback_data="1")],
+                [InlineKeyboardButton(text="5 дней", callback_data="5")]
+            ]
+        )
+        
+        await message.reply("Выберите количество дней, на которые вы хотите получить прогноз погоды:", reply_markup=keyboard)
+        await state.set_state(Weather.days)  # Устанавливаем состояние выбора дней
+    except ValueError as ve:
+        await message.reply(f"Ошибка: {ve}")
+    except Exception as e:
+        await message.reply(f"Произошла ошибка: {e}")
 
 # Обработчик выбора количества дней прогноза
 @dp.callback_query(lambda c: c.data in ["1", "5"], StateFilter(Weather.days))
 async def get_days(call: types.CallbackQuery, state: FSMContext):
-    await state.update_data(days=int(call.data))  # Сохраняем выбранное количество дней в состоянии
-    data = await state.get_data()  # Получаем сохраненные данные из состояния
-    locations = data.get("locations")  # Извлекаем локации
-    days = int(data.get("days"))  # Извлекаем количество дней
-
     try:
+        await state.update_data(days=int(call.data))  # Сохраняем выбранное количество дней в состоянии
+        data = await state.get_data()  # Получаем сохраненные данные из состояния
+        locations = data.get("locations")  # Извлекаем локации
+        days = int(data.get("days"))  # Извлекаем количество дней
+
         forecasts = {}
         for location in locations:
             forecast = get_conditions(API_KEY, location, days)  # Получаем прогноз погоды для каждой локации
+            if not forecast:
+                raise ValueError(f"Не удалось получить данные для города {location}.")
+
             forecasts[location] = forecast
         
         response = "Прогноз погоды для выбранных точек:\n"
@@ -168,18 +189,24 @@ async def get_days(call: types.CallbackQuery, state: FSMContext):
             os.remove(precip_path)  
             os.remove(wind_path)     
 
+    except ValueError as ve:
+        await call.message.answer(f"Ошибка: {ve}")
     except Exception as e:
-        await call.message.answer(f"Произошла ошибка: {e}")  # Обработка ошибок и отправка сообщения пользователю
-    
-    await call.message.answer(response)
-      # Отправляем текстовый ответ с прогнозом пользователю
-    await state.clear()
-    await help(call.message)  # Вызываем функцию помощи после завершения обработки
+        await call.message.answer(f"Произошла ошибка: {e}")
+    else:
+        await call.message.answer(response)
+    finally:
+        await state.clear()
+        await help(call.message)  # Вызываем функцию помощи после завершения обработки
 
 # Основная функция запуска бота
 async def main():
-    print("Бот запущен...")
-    await dp.start_polling(bot)  # Запускаем опрос обновлений от Telegram
+    try:
+        print("Бот запущен...")
+        await dp.start_polling(bot)  # Запускаем опрос обновлений от Telegram
+    except Exception as e:
+        print(f"Критическая ошибка: {e}")
 
 if __name__ == "__main__":
-    asyncio.run(main())  # Запускаем основную функцию при выполнении скрипта 
+    asyncio.run(main())  # Запускаем основную функцию при выполнении скрипта
+
